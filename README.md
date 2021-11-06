@@ -1,2 +1,2 @@
-# docker-pydev
-python development stuff in docker
+# docker
+All my docker development stuff
