@@ -1,0 +1,10 @@
+version: '3.7'
+
+services:
+  nut:
+    image: nickhasser/nut:0.0.1
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    volumes:
+      - "./config/:/etc/nut_host"
