@@ -1,0 +1,113 @@
+version: "3.9"
+
+services:
+  puppet:
+    image: puppet/puppetserver:7.9.2
+    container_name: puppet
+    hostname: puppet
+    ports:
+      - 8140:8140
+    volumes:
+      - ./puppet/etc_puppetlabs_code:/etc/puppetlabs/code
+      - ./puppet/etc_puppetlabs_puppet:/etc/puppetlabs/puppet
+      - ./puppet/etc_puppetlabs_puppetserver/ca:/etc/puppetlabs/puppetserver/ca
+    networks:
+      - puppet
+  puppetdb:
+    image: puppet/puppetdb:7.10.0
+    container_name: puppetdb
+    hostname: puppetdb
+    volumes:
+      - ./puppetdb/etc_puppetlabs_puppetdb:/etc/puppetlabs/puppetdb
+      - ./puppetdb/opt_puppetlabs_server_data_puppetdb:/opt/puppetlabs/server/data/puppetdb
+    networks:
+      - puppet
+      - postgres
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.puppetdb.entrypoints=web, websecure"
+      - "traefik.http.routers.puppetdb=tls=true"
+      - "traefik.http.routers.puppetdb.rule=PathPrefix(`/puppetdb`)"
+      - "traefik.http.middlewares.puppetdb-stripprefix.stripprefix.prefixes=/puppetdb"
+      - "traefik.http.middlewares.puppetdb-stripprefix.stripprefix.forceslash=true"
+      - "traefik.http.routers.puppetdb.middlewares=puppetdb-stripprefix"
+    environment:
+      PUPPETDB_MIGRATOR_USER: puppetdb_migrator
+      PUPPETDB_MIGRATOR_PASSWORD: puppetdb_migrator
+    depends_on:
+      - postgres
+      - puppet
+      - traefik
+  postgres:
+    image: postgres:14.6
+    container_name: postgres
+    hostname: postgres
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./postgres/bootstrap.sh:/host/postgres/bootstrap.sh
+      - ./postgres/data:/var/lib/postgresql/data/
+    networks:
+      - postgres
+  puppetboard:
+    image: ghcr.io/voxpupuli/puppetboard:4.2.3
+    container_name: puppetboard
+    hostname: puppetboard
+    networks:
+      - puppet
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.puppetboard.entrypoints=web, websecure"
+      - "traefik.http.routers.puppetboard.tls=true"
+      - "traefik.http.routers.puppetboard.rule=PathPrefix{`/puppetboard`)"
+    environment:
+      PUPPETBOARD_URL_PREFIX: /puppetboard
+  r10k:
+    image: puppet/r10k:3.15.2
+    container_name: r10k
+    hostname: r10k
+    volumes:
+      - ./puppet/etc_puppetlabs_code:/etc/puppetlabs/code
+      - ./r10k/etc_puppetlabs_r10k/r10k.yaml:/etc/puppetlabs/r10k/r10k.yaml
+      - ./r10k/home_puppet_.ssh:/home/puppet/.ssh
+      - ./r10k/var_cache_r10k:/var/cache/r10k/
+    command: deploy environment --color --modules --verbose=debug2
+    networks:
+      - puppet
+    profiles:
+      - r10k
+  traefik:
+    image: traefik:v2.9.6
+    container_name: traefik
+    hostname: traefik
+    networks:
+      - traefik
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ./traefik/etc_traefik:/etc/traefik
+      - ./traefik/var_log_traefik:/var/log/traefik
+      - ./traefik/etc_traefik/configs:/etc/traefik/configs
+      - ./traefik/pki/my_pki:/ssl-certs
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      - "traefik.enabled=true"
+      - "traefik.http.routers.traefik.rule=PathPrefix(`/api`)"
+      - "traefik.http.routers.traefik.entrypionts=web, websecure"
+      - "traefik.http.routers.traefik.tls=true"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.services.api@internal.loadbalancer.server.port=8080"
+      - "traefik.http.routers.traefik.middlewares=strip"
+      - "traefik.http.middleswares.strip.stripprefix.prefixes=/traefik"
+
+networks:
+  puppet:
+    name: puppet
+  postgres:
+    name: postgres
+  traefik:
+    name: traefik
+    #external: true
